@@ -1,52 +1,50 @@
-import express from 'express'
-import path from 'path'
-import { fileURLToPath } from 'url'
+import express from 'express';
 
-const __filename = fileURLToPath(import.meta.url)
-const __dirname = path.dirname(__filename)
+const app = express();
 
-const app = express()
+// CORS設定
+app.use((req, res, next) => {
+res.header('Access-Control-Allow-Origin', '*');
+res.header('Access-Control-Allow-Methods', 'POST, GET, OPTIONS');
+res.header('Access-Control-Allow-Headers', 'Content-Type');
+if (req.method === 'OPTIONS') {
+res.sendStatus(204);
+} else {
+next();
+}
+});
 
-// Home route - HTML
-app.get('/', (req, res) => {
-  res.type('html').send(`
-    <!doctype html>
-    <html>
-      <head>
-        <meta charset="utf-8"/>
-        <title>Express on Vercel</title>
-        <link rel="stylesheet" href="/style.css" />
-      </head>
-      <body>
-        <nav>
-          <a href="/">Home</a>
-          <a href="/about">About</a>
-          <a href="/api-data">API Data</a>
-          <a href="/healthz">Health</a>
-        </nav>
-        <h1>Welcome to Express on Vercel 🚀</h1>
-        <p>This is a minimal example without a database or forms.</p>
-        <img src="/logo.png" alt="Logo" width="120" />
-      </body>
-    </html>
-  `)
+app.use(express.json());
+
+// Claude API呼び出し
+app.post('/api/generate-ai-message', async (req, res) => {
+try {
+const { title, date, description } = req.body;
+
+const response = await fetch('https://api.anthropic.com/v1/messages', {
+method: 'POST',
+headers: {
+'Content-Type': 'application/json',
+'x-api-key': process.env.CLAUDE_API_KEY,
+'anthropic-version': '2023-06-01'
+},
+body: JSON.stringify({
+model: 'claude-3-haiku-20240307',
+max_tokens: 1024,
+messages: [{
+role: 'user',
+content: `予定: ${title}\n時間: ${date}\n場所: ${description || ''}\n\nこの予定に向けて、心に寄り添う温かく自然な日本語で、やる気と活力が湧いてくるような応援メッセージを50文字以内で生成してください。`
+}]
 })
+});
 
-app.get('/about', function (req, res) {
-  res.sendFile(path.join(__dirname, '..', 'components', 'about.htm'))
-})
+const data = await response.json();
+res.json({ message: data.content[0].text });
 
-// Example API endpoint - JSON
-app.get('/api-data', (req, res) => {
-  res.json({
-    message: 'Here is some sample API data',
-    items: ['apple', 'banana', 'cherry'],
-  })
-})
+} catch (error) {
+console.error('Error:', error);
+res.status(500).json({ message: 'エラーが発生しました' });
+}
+});
 
-// Health check
-app.get('/healthz', (req, res) => {
-  res.status(200).json({ status: 'ok', timestamp: new Date().toISOString() })
-})
-
-export default app
+export default app;
