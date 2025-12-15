@@ -1,60 +1,56 @@
-export default async function handler(req, res) {
-// ===== CORS =====
-res.setHeader('Access-Control-Allow-Origin', '*');
-res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+import express from "express";
+import fetch from "node-fetch";
+import admin from "firebase-admin";
 
-// preflight 対応
-if (req.method === 'OPTIONS') {
-return res.status(200).end();
+const app = express();
+app.use(express.json());
+
+// Firebase 初期化
+if (!admin.apps.length) {
+admin.initializeApp({
+credential: admin.credential.cert(JSON.parse(process.env.FIREBASE_KEY))
+});
 }
 
-// POST 以外は拒否
-if (req.method !== 'POST') {
-return res.status(405).json({ error: 'Method not allowed' });
-}
+const db = admin.firestore();
 
+// AIメッセージ生成API
+app.post("/api/generate", async (req, res) => {
 try {
-const { title, date, description } = req.body;
+const { eventId } = req.body;
 
-const response = await fetch('https://api.anthropic.com/v1/messages', {
-method: 'POST',
+const doc = await db.collection("events").doc(eventId).get();
+if (!doc.exists) {
+return res.status(404).json({ error: "event not found" });
+}
+
+const event = doc.data();
+
+const aiRes = await fetch("https://api.anthropic.com/v1/messages", {
+method: "POST",
 headers: {
-'Content-Type': 'application/json',
-'x-api-key': process.env.CLAUDE_API_KEY,
-'anthropic-version': '2023-06-01',
+"Content-Type": "application/json",
+"x-api-key": process.env.CLAUDE_API_KEY,
+"anthropic-version": "2023-06-01"
 },
 body: JSON.stringify({
-model: 'claude-3-haiku-20240307',
+model: "claude-3-haiku-20240307",
 max_tokens: 100,
-messages: [
-{
-role: 'user',
-content: `予定「${title}」(${date}) ${
-description ? `詳細: ${description}` : ''
-} に対する応援メッセージを30文字以内で生成してください。`,
-},
-],
-}),
+messages: [{
+role: "user",
+content: `「${event.title}」を頑張る人への応援メッセージを1文で作って`
+}]
+})
 });
 
-if (!response.ok) {
-throw new Error('Claude API error');
+const aiData = await aiRes.json();
+const message = aiData.content[0].text;
+
+res.json({ message });
+
+} catch (e) {
+res.status(500).json({ error: e.message });
 }
-
-const data = await response.json();
-const message = data.content[0].text;
-
-return res.status(200).json({
-success: true,
-message,
 });
 
-} catch (error) {
-console.error(error);
-return res.status(500).json({
-success: false,
-message: 'がんばってください！応援しています！',
-});
-}
-}
+export default app;
