@@ -1,56 +1,59 @@
-import express from "express";
-import fetch from "node-fetch";
-import admin from "firebase-admin";
+import express from 'express';
+import cors from 'cors';
+import bodyParser from 'body-parser';
+import Anthropic from '@anthropic-ai/sdk';
 
 const app = express();
-app.use(express.json());
 
-// Firebase 初期化
-if (!admin.apps.length) {
-admin.initializeApp({
-credential: admin.credential.cert(JSON.parse(process.env.FIREBASE_KEY))
-});
-}
+/* ===== CORS（最重要） ===== */
+app.use(cors({
+ origin: '*',
+ methods: ['GET', 'POST', 'OPTIONS'],
+ allowedHeaders: ['Content-Type'],
+}));
 
-const db = admin.firestore();
+app.options('*', cors());
 
-// AIメッセージ生成API
-app.post("/api/generate", async (req, res) => {
-try {
-const { eventId } = req.body;
+/* ===== middleware ===== */
+app.use(bodyParser.json());
 
-const doc = await db.collection("events").doc(eventId).get();
-if (!doc.exists) {
-return res.status(404).json({ error: "event not found" });
-}
-
-const event = doc.data();
-
-const aiRes = await fetch("https://api.anthropic.com/v1/messages", {
-method: "POST",
-headers: {
-"Content-Type": "application/json",
-"x-api-key": process.env.CLAUDE_API_KEY,
-"anthropic-version": "2023-06-01"
-},
-body: JSON.stringify({
-model: "claude-3-haiku-20240307",
-max_tokens: 100,
-messages: [{
-role: "user",
-content: `「${event.title}」を頑張る人への応援メッセージを1文で作って`
-}]
-})
+/* ===== Claude ===== */
+const anthropic = new Anthropic({
+ apiKey: process.env.CLAUDE_API_KEY,
 });
 
-const aiData = await aiRes.json();
-const message = aiData.content[0].text;
+/* ===== API ===== */
+app.post('/api/generate-ai-message', async (req, res) => {
+ try {
+ const { title, date, description } = req.body;
 
-res.json({ message });
+ const prompt = `
+予定タイトル: ${title}
+予定内容: ${description || 'なし'}
+日時: ${date}
 
-} catch (e) {
-res.status(500).json({ error: e.message });
-}
+この予定を応援する、やさしく前向きな日本語メッセージを1つ生成してください。
+`;
+
+ const message = await anthropic.messages.create({
+ model: 'claude-3-5-sonnet-20240620',
+ max_tokens: 150,
+ messages: [
+ { role: 'user', content: prompt }
+ ],
+ });
+
+ res.json({
+ message: message.content[0].text
+ });
+
+ } catch (err) {
+ console.error(err);
+ res.status(500).json({
+ message: 'AIメッセージの生成に失敗しました'
+ });
+ }
 });
 
+/* ===== export for Vercel ===== */
 export default app;
