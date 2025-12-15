@@ -1,3 +1,9 @@
-export default function handler(req, res) {
-res.status(200).send("Vercel entrypoint OK");
-}
+import express from "express";
+
+const app = express();
+
+app.get("/", (req, res) => {
+res.send("Express on Vercel is running!");
+});
+
+export default app;
